@@ -1,0 +1,84 @@
+from datetime import datetime, timezone, timedelta
+
+from skyfield.api import wgs84, load, Star
+from skyfield.almanac import find_risings, find_settings
+from skyfield.magnitudelib import planetary_magnitude
+from loguru import logger
+
+from config.config import PLANET_MAPPING, MESSIER_CATALOG
+
+ts = load.timescale()
+planets = load('de421.bsp')
+
+async def get_object_visibility(
+    lat: float, 
+    lon: float, 
+    object_name: str, 
+    target_date: datetime,
+    user_tz_offset: int = 3
+) -> dict | None:
+    """
+    Универсальная асинхронная функция расчета видимости и яркости объектов.
+    Автоматически адаптирует суточное окно под локальный часовой пояс пользователя.
+    """
+    tz_user = timezone(timedelta(hours=user_tz_offset))
+    name_upper = object_name.upper().strip()
+    name_lower = object_name.lower().strip()
+    
+    target_object = None
+    current_brightness = 0.0
+
+    earth = planets['earth']
+    observer = earth + wgs84.latlon(lat, lon)
+    
+    if name_lower in PLANET_MAPPING:
+        try:
+            target_object = planets[PLANET_MAPPING[name_lower]]
+            
+            local_midnight = target_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=tz_user)
+            t_midnight = ts.from_datetime(local_midnight.astimezone(timezone.utc))
+            
+            astrometric = observer.at(t_midnight).observe(target_object)
+            current_brightness = planetary_magnitude(astrometric)
+            
+        except (ValueError, KeyError) as e:
+            logger.error(f'Планета {object_name} не найдена в файле эфемерид: {e}')
+            return None
+    else:
+        messier_obj = MESSIER_CATALOG.get(name_upper)
+        if not messier_obj:
+            logger.error(f'Объект {object_name} не найден ни в планетах, ни в каталоге Мессье')
+            return None
+            
+        target_object = messier_obj.skyfield_star
+        current_brightness = messier_obj.V
+    local_noon = target_date.replace(hour=12, minute=0, second=0, microsecond=0, tzinfo=tz_user)
+    start_dt = local_noon.astimezone(timezone.utc)
+    end_dt = start_dt + timedelta(days=1)
+    
+    t0 = ts.from_datetime(start_dt)
+    t1 = ts.from_datetime(end_dt)
+    rise_times, _ = find_risings(observer, target_object, t0, t1)
+    setting_times, _ = find_settings(observer, target_object, t0, t1)
+    
+    rise_strings = [t.astimezone(tz_user).strftime('%H:%M') for t in rise_times]
+    set_strings = [t.astimezone(tz_user).strftime('%H:%M') for t in setting_times]
+    
+    if rise_strings or set_strings:
+        visibility = True
+    else:
+        local_midnight = target_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=tz_user)
+        t_midnight = ts.from_datetime(local_midnight.astimezone(timezone.utc))
+        
+        alt, _, _ = observer.at(t_midnight).observe(target_object).apparent().altaz()
+        visibility = alt.degrees > 0
+        
+    logger.info(f'Видимость и яркость объекта {object_name} успешно получены')
+    
+    return {
+        'object': name_upper,
+        'visibility': visibility, 
+        'rise_times': rise_strings, 
+        'setting_times': set_strings,
+        'brightness': round(current_brightness, 2)
+    }
