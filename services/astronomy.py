@@ -1,5 +1,4 @@
 from datetime import datetime, timezone, timedelta
-
 from skyfield.api import wgs84, load, Star
 from skyfield.almanac import find_risings, find_settings
 from skyfield.magnitudelib import planetary_magnitude
@@ -31,11 +30,15 @@ async def get_object_visibility(
     earth = planets['earth']
     observer = earth + wgs84.latlon(lat, lon)
     
+    naive_date = target_date.replace(tzinfo=None)
+    
     if name_lower in PLANET_MAPPING:
         try:
             target_object = planets[PLANET_MAPPING[name_lower]]
-            
-            local_midnight = target_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=tz_user)
+            local_midnight = datetime(
+                year=naive_date.year, month=naive_date.month, day=naive_date.day,
+                hour=0, minute=0, second=0, tzinfo=tz_user
+            )
             t_midnight = ts.from_datetime(local_midnight.astimezone(timezone.utc))
             
             astrometric = observer.at(t_midnight).observe(target_object)
@@ -52,12 +55,17 @@ async def get_object_visibility(
             
         target_object = messier_obj.skyfield_star
         current_brightness = messier_obj.V
-    local_noon = target_date.replace(hour=12, minute=0, second=0, microsecond=0, tzinfo=tz_user)
+
+    local_noon = datetime(
+        year=naive_date.year, month=naive_date.month, day=naive_date.day,
+        hour=12, minute=0, second=0, tzinfo=tz_user
+    )
     start_dt = local_noon.astimezone(timezone.utc)
     end_dt = start_dt + timedelta(days=1)
     
     t0 = ts.from_datetime(start_dt)
     t1 = ts.from_datetime(end_dt)
+    
     rise_times, _ = find_risings(observer, target_object, t0, t1)
     setting_times, _ = find_settings(observer, target_object, t0, t1)
     
@@ -67,7 +75,10 @@ async def get_object_visibility(
     if rise_strings or set_strings:
         visibility = True
     else:
-        local_midnight = target_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=tz_user)
+        local_midnight = datetime(
+            year=naive_date.year, month=naive_date.month, day=naive_date.day,
+            hour=0, minute=0, second=0, tzinfo=tz_user
+        )
         t_midnight = ts.from_datetime(local_midnight.astimezone(timezone.utc))
         
         alt, _, _ = observer.at(t_midnight).observe(target_object).apparent().altaz()
