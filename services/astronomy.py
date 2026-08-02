@@ -72,8 +72,6 @@ async def get_object_visibility(
     
     rise_times = [t for t, y in zip(t_events, y_events) if y == 1]
     setting_times = [t for t, y in zip(t_events, y_events) if y == 0]
-    
-    # Форматирование времени в локальную таймзону пользователя
     rise_strings = [t.astimezone(tz_user).strftime('%H:%M') for t in rise_times]
     set_strings = [t.astimezone(tz_user).strftime('%H:%M') for t in setting_times]
     
