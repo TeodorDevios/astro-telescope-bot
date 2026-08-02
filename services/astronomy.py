@@ -1,6 +1,7 @@
 from datetime import datetime, timezone, timedelta
+import numpy as np  # Импортируем для безопасной работы с типами Skyfield
 from skyfield.api import wgs84, load, Star
-from skyfield.almanac import find_risings, find_settings
+from skyfield.almanac import risings_and_settings, find_discrete
 from skyfield.magnitudelib import planetary_magnitude
 from loguru import logger
 
@@ -28,8 +29,9 @@ async def get_object_visibility(
     current_brightness = 0.0
 
     earth = planets['earth']
-    observer = earth + wgs84.latlon(lat, lon)
     
+    geo_location = wgs84.latlon(lat, lon)
+    observer = earth + geo_location
     naive_date = target_date.replace(tzinfo=None)
     
     if name_lower in PLANET_MAPPING:
@@ -42,7 +44,8 @@ async def get_object_visibility(
             t_midnight = ts.from_datetime(local_midnight.astimezone(timezone.utc))
             
             astrometric = observer.at(t_midnight).observe(target_object)
-            current_brightness = planetary_magnitude(astrometric)
+            mag_array = planetary_magnitude(astrometric)
+            current_brightness = float(mag_array) if not isinstance(mag_array, float) else mag_array
             
         except (ValueError, KeyError) as e:
             logger.error(f'Планета {object_name} не найдена в файле эфемерид: {e}')
@@ -55,20 +58,22 @@ async def get_object_visibility(
             
         target_object = messier_obj.skyfield_star
         current_brightness = messier_obj.V
-
     local_noon = datetime(
         year=naive_date.year, month=naive_date.month, day=naive_date.day,
         hour=12, minute=0, second=0, tzinfo=tz_user
     )
     start_dt = local_noon.astimezone(timezone.utc)
     end_dt = start_dt + timedelta(days=1)
-    
     t0 = ts.from_datetime(start_dt)
     t1 = ts.from_datetime(end_dt)
     
-    rise_times, _ = find_risings(observer, target_object, t0, t1)
-    setting_times, _ = find_settings(observer, target_object, t0, t1)
+    f = risings_and_settings(planets, target_object, geo_location)
+    t_events, y_events = find_discrete(t0, t1, f)
     
+    rise_times = [t for t, y in zip(t_events, y_events) if y == 1]
+    setting_times = [t for t, y in zip(t_events, y_events) if y == 0]
+    
+    # Форматирование времени в локальную таймзону пользователя
     rise_strings = [t.astimezone(tz_user).strftime('%H:%M') for t in rise_times]
     set_strings = [t.astimezone(tz_user).strftime('%H:%M') for t in setting_times]
     
@@ -82,7 +87,8 @@ async def get_object_visibility(
         t_midnight = ts.from_datetime(local_midnight.astimezone(timezone.utc))
         
         alt, _, _ = observer.at(t_midnight).observe(target_object).apparent().altaz()
-        visibility = alt.degrees > 0
+        alt_degrees = float(alt.degrees) if not isinstance(alt.degrees, float) else alt.degrees
+        visibility = alt_degrees > 0
         
     logger.info(f'Видимость и яркость объекта {object_name} успешно получены')
     
@@ -91,5 +97,5 @@ async def get_object_visibility(
         'visibility': visibility, 
         'rise_times': rise_strings, 
         'setting_times': set_strings,
-        'brightness': round(current_brightness, 2)
+        'brightness': round(float(current_brightness), 2)  
     }
