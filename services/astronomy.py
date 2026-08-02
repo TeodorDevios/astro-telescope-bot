@@ -1,5 +1,5 @@
 from datetime import datetime, timezone, timedelta
-import numpy as np  # Импортируем для безопасной работы с типами Skyfield
+import numpy as np 
 from skyfield.api import wgs84, load, Star
 from skyfield.almanac import risings_and_settings, find_discrete
 from skyfield.magnitudelib import planetary_magnitude
