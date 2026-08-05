@@ -30,8 +30,6 @@ async def send_daily_forecast(bot: Bot):
             
         visible_planets = []
         visible_messier = []
-        
-        # 1. Цикл проверки всех планет
         for planet_name in PLANET_MAPPING.keys():
             res = await get_object_visibility(
                 lat=user.latitude,
